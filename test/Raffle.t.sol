@@ -8,6 +8,6 @@ contract RaffleTest is Test {
     Raffle public raffle;
 
     function setUp() public {
-        raffle = new Raffle({entranceFee: 2});
+        raffle = new Raffle({entranceFee: 2, interval: 2});
     }
 }
