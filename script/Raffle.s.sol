@@ -1,19 +1,32 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: Apache License 2.0
 pragma solidity 0.8.19;
 
-import {Script, console} from "forge-std/Script.sol";
+import {Script} from "forge-std/Script.sol";
 import {Raffle} from "../src/Raffle.sol";
+import {HelperConfig} from "./HelperConfig.s.sol";
+import {CreateSubscription} from "./Interactions.s.sol";
 
 contract RaffleScript is Script {
-    Raffle public raffle;
+    function deployContract() public returns (Raffle, HelperConfig) {
+        HelperConfig helperConfig = new HelperConfig();
+        HelperConfig.NetworkConfig memory config = helperConfig.getConfig();
 
-    function setUp() public {}
+        if (config.subscriptionId == 0) {
+            CreateSubscription createSubscription = new CreateSubscription();
+            (config.subscriptionId, config.vrfCoordinator) = createSubscription
+                .createSubscription(config.vrfCoordinator);
+        }
 
-    function run() public {
         vm.startBroadcast();
-
-        raffle = new Raffle({entranceFee: 2});
-
+        Raffle raffle = new Raffle(
+            config.entranceFee,
+            config.interval,
+            config.vrfCoordinator,
+            config.gasLane,
+            config.subscriptionId,
+            config.callbackGasLimit
+        );
         vm.stopBroadcast();
+        return (raffle, helperConfig);
     }
 }
