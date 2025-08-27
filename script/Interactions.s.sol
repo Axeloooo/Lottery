@@ -93,7 +93,7 @@ contract AddConsumer is Script {
         uint256 subId
     ) public {
         console.log("Adding consumer contract: ", contractToAddtoVrf);
-        console.log("To crfCoordinator: ", vrfCoordinator);
+        console.log("To vrfCoordinator: ", vrfCoordinator);
         console.log("On chainId: ", block.chainid);
         vm.startBroadcast();
         VRFCoordinatorV2_5Mock(vrfCoordinator).addConsumer(
