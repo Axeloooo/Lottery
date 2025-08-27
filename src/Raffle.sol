@@ -87,7 +87,7 @@ contract Raffle is VRFConsumerBaseV2Plus {
      * 1. The time interval has passed between raffle runs
      * 2. The lottery is open
      * 3. The contract has ETH
-     * 4. Implicity, yoursubscription has LINK
+     * 4. Implicitly, your subscription has LINK
      * @param - ignored
      * @return upkeepNeeded - true if it's time to restart the lottery
      * @return - ignored
