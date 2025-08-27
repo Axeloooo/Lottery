@@ -24,7 +24,7 @@ contract CreateSubscription is Script {
         uint256 subId = VRFCoordinatorV2_5Mock(vrfCoordinator)
             .createSubscription();
         vm.stopBroadcast();
-        console.log("Ypur subscription Id is: ", subId);
+        console.log("Your subscription Id is: ", subId);
         console.log(
             "Please update the subscription Id in your HelperConfig.s.sol"
         );
