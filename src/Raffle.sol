@@ -90,7 +90,7 @@ contract Raffle is VRFConsumerBaseV2Plus {
      * 4. Implicity, yoursubscription has LINK
      * @param - ignored
      * @return upkeepNeeded - true if it's time to restart the lottery
-     * @return - igonored
+     * @return - ignored
      */
     function checkUpkeep(
         bytes memory /* checkData */
