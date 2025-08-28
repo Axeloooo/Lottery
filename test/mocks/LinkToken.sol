@@ -1,5 +1,4 @@
-// SPDX-License-Identifier: MIT
-// @dev This contract has been adapted to fit with foundry
+// SPDX-License-Identifier: Apache License 2.0
 pragma solidity ^0.8.0;
 
 import {ERC20} from "@solmate/tokens/ERC20.sol";
