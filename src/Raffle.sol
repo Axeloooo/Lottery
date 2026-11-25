@@ -17,8 +17,9 @@ contract Raffle is VRFConsumerBaseV2Plus {
     error Raffle__SendMoreToEnterRaffle();
     error Raffle__TransferFailed();
     error Raffle__RaffleNotOpen();
+    error Raffle__NothingToWithdraw();
     error Raffle__UpkeepNotNeeded(
-        uint256 balance,
+        uint256 pot,
         uint256 playersLength,
         uint256 raffleState
     );
@@ -41,7 +42,17 @@ contract Raffle is VRFConsumerBaseV2Plus {
     bytes32 private immutable i_keyHash;
     uint256 private immutable i_subscriptionId;
     uint32 private immutable i_callbackGasLimit;
-    address payable[] private s_players;
+    /// @dev Players are stored per round so a new round never has to clear
+    /// the previous array. Clearing it inside fulfillRandomWords cost one
+    /// SSTORE per entry and could exceed the VRF callback gas limit.
+    mapping(uint256 round => address payable[] players) private s_players;
+    uint256 private s_round;
+    /// @dev Entrance fees collected in the current round. Kept separately from
+    /// address(this).balance because unclaimed winnings also sit in the contract.
+    uint256 private s_pot;
+    /// @dev Pull payments: winners withdraw their prize, so a winner that
+    /// cannot receive ETH can't make the VRF callback revert.
+    mapping(address winner => uint256 amount) private s_pendingWithdrawals;
     uint256 private s_lastTimeStamp;
     address private s_recentWinner;
     RaffleState private s_raffleState;
@@ -52,6 +63,7 @@ contract Raffle is VRFConsumerBaseV2Plus {
     event RaffleEntered(address indexed player);
     event WinnerPicked(address indexed winner);
     event RequestedRaffleWinner(uint256 indexed requestId);
+    event WinningsWithdrawn(address indexed winner, uint256 amount);
 
     constructor(
         uint256 entranceFee,
@@ -77,7 +89,8 @@ contract Raffle is VRFConsumerBaseV2Plus {
         if (s_raffleState != RaffleState.OPEN) {
             revert Raffle__RaffleNotOpen();
         }
-        s_players.push(payable(msg.sender));
+        s_players[s_round].push(payable(msg.sender));
+        s_pot += msg.value;
         emit RaffleEntered(msg.sender);
     }
 
@@ -87,7 +100,7 @@ contract Raffle is VRFConsumerBaseV2Plus {
      * The following should be true in order for upkeepNeeded to be true:
      * 1. The time interval has passed between raffle runs
      * 2. The lottery is open
-     * 3. The contract has ETH
+     * 3. The current round has collected entrance fees
      * 4. Implicitly, your subscription has LINK
      * @param - ignored
      * @return upkeepNeeded - true if it's time to restart the lottery
@@ -98,8 +111,8 @@ contract Raffle is VRFConsumerBaseV2Plus {
     ) public view returns (bool upkeepNeeded, bytes memory /* performData */) {
         bool timeHasPassed = (block.timestamp - s_lastTimeStamp) >= i_interval;
         bool isOpen = s_raffleState == RaffleState.OPEN;
-        bool hasBalance = address(this).balance > 0;
-        bool hasPlayers = s_players.length > 0;
+        bool hasBalance = s_pot > 0;
+        bool hasPlayers = s_players[s_round].length > 0;
         upkeepNeeded = timeHasPassed && isOpen && hasBalance && hasPlayers;
         return (upkeepNeeded, "");
     }
@@ -108,8 +121,8 @@ contract Raffle is VRFConsumerBaseV2Plus {
         (bool upkeepNeeded, ) = checkUpkeep("");
         if (!upkeepNeeded) {
             revert Raffle__UpkeepNotNeeded(
-                address(this).balance,
-                s_players.length,
+                s_pot,
+                s_players[s_round].length,
                 uint256(s_raffleState)
             );
         }
@@ -136,17 +149,35 @@ contract Raffle is VRFConsumerBaseV2Plus {
         uint256 /*requestId*/,
         uint256[] calldata randomWords
     ) internal override {
-        uint256 indexOfWinner = randomWords[0] % s_players.length;
-        address payable recentWinner = s_players[indexOfWinner];
-        s_recentWinner = recentWinner;
+        // Constant gas regardless of the number of players, and no external
+        // call: this callback must not revert, because VRF v2.5 does not retry.
+        address payable[] storage players = s_players[s_round];
+        uint256 indexOfWinner = randomWords[0] % players.length;
+        address payable recentWinner = players[indexOfWinner];
+        uint256 prize = s_pot;
 
+        s_recentWinner = recentWinner;
+        s_pendingWithdrawals[recentWinner] += prize;
+        s_pot = 0;
+        s_round++;
         s_raffleState = RaffleState.OPEN;
-        s_players = new address payable[](0);
         s_lastTimeStamp = block.timestamp;
 
-        emit WinnerPicked(s_recentWinner);
+        emit WinnerPicked(recentWinner);
+    }
 
-        (bool success, ) = recentWinner.call{value: address(this).balance}("");
+    /**
+     * @notice Sends the caller every prize they have won and not yet withdrawn.
+     */
+    function withdraw() external {
+        uint256 amount = s_pendingWithdrawals[msg.sender];
+        if (amount == 0) {
+            revert Raffle__NothingToWithdraw();
+        }
+        s_pendingWithdrawals[msg.sender] = 0;
+        emit WinningsWithdrawn(msg.sender, amount);
+
+        (bool success, ) = payable(msg.sender).call{value: amount}("");
         if (!success) {
             revert Raffle__TransferFailed();
         }
@@ -164,7 +195,25 @@ contract Raffle is VRFConsumerBaseV2Plus {
     }
 
     function getPlayer(uint256 indexOfPlayer) external view returns (address) {
-        return s_players[indexOfPlayer];
+        return s_players[s_round][indexOfPlayer];
+    }
+
+    function getNumberOfPlayers() external view returns (uint256) {
+        return s_players[s_round].length;
+    }
+
+    function getRound() external view returns (uint256) {
+        return s_round;
+    }
+
+    function getPot() external view returns (uint256) {
+        return s_pot;
+    }
+
+    function getPendingWithdrawal(
+        address winner
+    ) external view returns (uint256) {
+        return s_pendingWithdrawals[winner];
     }
 
     function getLastTimeStamp() external view returns (uint256) {
